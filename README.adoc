@@ -1,3 +1,197 @@
 = Practice #11
+:toc:
+
+== Prerequisites
+
+To be able to work with code, you need:
+
+* Java 21
+* Maven
+* SQLite
 
 
+== Refactoring to EventSouring
+
+We will work on an application that emulates bank accounts.
+You can create an account, deposit, withdraw money, or request a balance.
+Also, a bank can apply fees.
+
+*Everything is oversimplified.*
+Many obvious features are omitted, like validation, id-generation, decimals, currencies, etc.
+We aim to learn an event-sourcing idea, not create a bank application.
+
+
+The domain model is simple — a bank account is two integers: `id` and `amount`.
+
+.BankAccount entity
+[source, java]
+----
+public class BankAccount {
+    public final int id;
+    public final int balance;
+}
+----
+
+For this exercise, we don't need more
+
+=== State-based approach
+
+So far, we have an application that does basic operations on accounts.
+After each operation, the application updates the state and saves it into a database.
+Such an approach called CRUD is widely used; you're likely familiar with it.
+In most cases, it works, and you don't need more. It is our case we'll need more :)
+
+.example of working program
+----
+> help
+(c)reate id
+(b)alance id
+(d)eposit id amount
+(w)ithdraw id amount
+(f)ee id amount
+> c 42
+created account, id 42, balance $0
+> b 42
+account 42, balance: $0
+> d 42 500
+deposited: $500, new balance: $500
+> w 42 100
+withdrew: $100, new balance: $400
+> f 42 4
+fee: $4, new balance: $396
+> b 42
+account 42, balance: $396
+> exit
+----
+
+As we keep only the last state, we don't know how we ended up in this state.
+Was it a series of withdrawals or fees or both?
+
+*PROBLEM:* Clients accuse us that we steal their money => we need to keep history.
+
+=== Introducing events
+In DDD world, _event_ is a fact that something has happened.
+It seems there are four events in our domain.
+
+.what's happened?
+* Account has been created
+* Money has been deposited
+* Money has been withdrawn
+* Fee has been applied
+
+We won't store account's state anymore. We will store events => what has happened with the account.
+When we need an account in the latest state, we have to read all events and apply them in the historical order.
+Such operation is called _replaying events_.
+
+.what you need to do
+* [ ] Create events (tip: it's convenient when all events implement one interface i.e.`DomainEvent`)
+* [ ] Add to `BankAccount` a constructor from events
+* [ ] Modify `BankAccount` for returning events
+* [ ] Refactor `BankAccountRepository` to work with events
+* [ ] Create `CashMovementsService`, add `history` method that returns cash movements as in the example below
+* [ ] Update `UserInputController` to call `history`
+* [ ] Add unit-tests
+
+.when we call history
+----
+> h 42
+created, id:42
+deposited: $5
+deposited: $5
+deposited: $50
+withdrew: $9
+fee: $4
+----
+
+*NEXT PROBLEM:* Bank has applied a new rule, $1 fee should be automatically applied for deposits more than $25 => make `BankAccount` "cause" a few events per operation.
+
+=== Few events
+It is normal when one operation (_command_) leads to a few events.
+Sometimes even handling an event can lead to another event.
+
+In our case, most work was already done in the previous step. We only need to refactoe
+
+.what you need to do
+* [ ] Modify `BankAccount` for causing a few events (i.e. `List<DomainEvent> events`)
+* [ ] Add logic to add $1 fee for depositing more than $25
+* [ ] Refactor `BankAccountRepository`, if necessary
+* [ ] Add unit tests, if necessary
+
+
+*NEXT PROBLEM:* Tax department wants to see summary: how much was totally deposited/withdrawn => process events to calculate all deposits, withdrawals, fees.
+
+=== Projections
+The ordered list of events is called _stream_. Previously, we _replayed_ a _stream_ to build our _entity_ - `BankAccount`.
+However, we can process our _stream_ in a different way. Or use only a subset of events.
+Such operation, when we derive a new state from event stream, is called _projection_.
+
+In our case, the projection will be an account summary.
+
+.what you need to do
+* [ ] Modify `CashMovementsService`, add `summary` method to calculate sums of all deposits, withdrawals, fees.
+* [ ] Update `UserInputController` to call `summary`
+
+.when we call summary
+----
+> s 42
+id: 42
+total deposited: $60
+total withdrew: $9
+total fees: $5
+----
+
+*NEXT PROBLEM:* When the application restarts, we lose data => store events in a database
+
+=== Store events in DB
+In all previous examples we kept events in memory, using popular `HashMap`-based "storage".
+In the real world, we need more durable storage.
+There are even special event storages, i.e.,
+https://www.eventstore.com/[EventStore] or https://martendb.io/[Marten] (both use PostgreSQL underneath btw).
+However, in most cases, just one dedicated table in any relation database is enough.
+
+
+We don't know all events in advance. Moreover, some events can change structure in the future (it is beyond our exercise).
+That's why it's practical to not only store an event's `data` but the event's `type` as well.
+We need to serialize and deserialize events somehow. Nowadays, the most popular format is JSON.
+We also need to maintain order; that's why we need `version`.
+If all of it sounds confusing, see the example below.
+
+.what you need to do
+* [ ] Create a table for events in your database
+* [ ] Implement `BankAccountRepository` to store events in the database
+* [ ] Implement serialization/deserializer in the repository as well.
+
+.schema
+[source, sql]
+----
+CREATE TABLE events (
+  id              INTEGER NOT NULL PRIMARY KEY,
+  entity_id       INTEGER NOT NULL,
+  version         INTEGER NOT NULL,
+  type            VARCHAR NOT NULL,
+  data            VARCHAR NOT NULL,
+  created_at      DATETIME(6)  NOT NULL,
+
+  UNIQUE (entity_id, version)
+);
+----
+
+.events for two bank account entities, with ids 21 and 42
+|===
+| id | entity_id | version | type | data | created_at
+
+|1|42|1|AccountCreated|{"id":42}|2024-04-20T00:45:01
+|2|42|2|MoneyDeposited|{"amount":50}|2024-04-20T00:46:02
+|3|42|3|FeeApplied|{"amount":1}|2024-04-20T00:47:03
+|4|42|4|MoneyWithdrew|{"amount":9}|2024-04-20T00:48:04
+|5|42|5|FeeApplied|{"amount":4}|2024-04-20T00:49:05
+|6|21|1|AccountCreated|{"id":21}|2024-04-20T22:50:06
+|7|21|2|MoneyDeposited|{"amount":5}|2024-04-20T22:51:07
+|8|21|3|MoneyDeposited|{"amount":5}|2024-04-20T22:52:08
+|9|21|4|MoneyDeposited|{"amount":50}|2024-04-20T22:53:09
+|10|21|5|FeeApplied|{"amount":1}|2024-04-20T22:54:10
+|11|21|6|MoneyWithdrew|{"amount":9}|2024-04-20T22:55:11
+
+
+|===
+*NEXT PROBLEM:* It's too long to replay too many events => implement snapshots (it is beyond our exercise).
