@@ -90,7 +90,7 @@ Such operation is called _replaying events_.
 * [ ] Refactor `BankAccountRepository` to work with events
 * [ ] Create `CashMovementsService`, add `history` method that returns cash movements as in the example below
 * [ ] Update `UserInputController` to call `history`
-* [ ] Add unit-tests
+* [ ] Make sure that unit tests pass
 
 .when we call history
 ----
@@ -115,7 +115,7 @@ In our case, most work was already done in the previous step. We only need to re
 * [ ] Modify `BankAccount` for causing a few events (i.e. `List<DomainEvent> events`)
 * [ ] Add logic to add $1 fee for depositing more than $25
 * [ ] Refactor `BankAccountRepository`, if necessary
-* [ ] Add unit tests, if necessary
+* [ ] Make sure that unit tests pass
 
 
 *NEXT PROBLEM:* Tax department wants to see summary: how much was totally deposited/withdrawn => process events to calculate all deposits, withdrawals, fees.
@@ -130,6 +130,7 @@ In our case, the projection will be an account summary.
 .what you need to do
 * [ ] Modify `CashMovementsService`, add `summary` method to calculate sums of all deposits, withdrawals, fees.
 * [ ] Update `UserInputController` to call `summary`
+* [ ] Make sure that unit tests pass
 
 .when we call summary
 ----
@@ -159,7 +160,7 @@ If all of it sounds confusing, see the example below.
 .what you need to do
 * [ ] Create a table for events in your database
 * [ ] Implement `BankAccountRepository` to store events in the database
-* [ ] Implement serialization/deserializer in the repository as well.
+* [ ] Make sure that unit tests pass
 
 .schema
 [source, sql]
